@@ -8,13 +8,31 @@ from PIL import Image
 import caffe, cv2
 from matplotlib import pyplot as plt
 plt.rcParams.update({'figure.max_open_warning': 0})
+from scipy import signal
+
 
 def showImage(im):
     im = np.array(im, dtype=np.uint8)
     fig,ax = plt.subplots(figsize=(12,12))
     ax.imshow(im)
 
-def segmentAndShowImage(net, imname):
+def pickUpKeypoint(score, idx, i):
+    f = np.zeros((52, 52))
+    score = score[:,:,0]
+    cv2.circle(f, (25, 25), 25, 1, -1)
+    score = signal.convolve2d(score, f, boundary='fill', mode='same') / (25*25*3.14)
+
+    score *= 255.0
+    cv2.imwrite('score_' + str(idx) + '_' + str(i) + '_Conv.png' , score)
+
+
+    point  = np.zeros(score.shape)
+    x, y = np.unravel_index(np.argmax(score), score.shape)
+    cv2.circle(point, (y, x), 25, 1, -1)
+    point *= 255.0
+    cv2.imwrite('score_' + str(idx) + '_' + str(i) + '_Point.png' , point)
+
+def segmentAndShowImage(net, imname, idx):
 
     im = cv2.imread(imname)
     cv2.imwrite('x.png', im)
@@ -39,40 +57,31 @@ def segmentAndShowImage(net, imname):
         score_exp = np.exp(score_i)
         score_sum = np.sum(score_exp, axis = 2) # W x H
         score_sum = score_sum[:, :, np.newaxis] # W x H x 1
-        score_norm = score_exp / score_sum # W x H x 1
-        score_norm = score_norm[:,:,1:2]
+        score_norm = score_exp / score_sum # W x H x 2
+        score_norm = score_norm[:,:,1:2] # W x H x 1
+
+        pickUpKeypoint(score_norm, idx, i)
 
         score_norm *= 255
-        cv2.imwrite('score_' + str(i) + '.png' , score_norm)
-
+        cv2.imwrite('score_' + str(idx) + '_' + str(i) + '.png' , score_norm)
 
         label_i = label[i] * 255.0  # 1 x W x H
         label_i = label_i.transpose((1, 2, 0))
 
-        cv2.imwrite('label_' + str(i) + '.png', label_i)
+        cv2.imwrite('score_' + str(idx) + '_' + str(i) + '_GT.png', label_i)
 
-        '''
-        print(im)
-        fig,ax = plt.subplots(figsize=(12,12))
-        ax.imshow(im) 
-        plt.show()
-        '''
-    exit(0)
-
-    '''
-    fig,ax = plt.subplots(figsize=(12,12))
-    ax.imshow(out, interpolation='nearest')
-    '''
 
 
 def main():
     caffe.set_mode_gpu()
-    net = caffe.Net('train.prototxt', './kp_snapshot/_iter_130000.caffemodel', caffe.TEST)
+    net = caffe.Net('train.prototxt', './kp_snapshot/v2_iter_100000.caffemodel', caffe.TEST)
 
 
     val = np.loadtxt('./cropTrain/train.txt', dtype=str)
-    for line in val:
-        segmentAndShowImage(net, line)
+    for i, line in enumerate(val):
+        segmentAndShowImage(net, line, i)
+        if i == 1:
+            break
 
 
 if __name__ == '__main__':
